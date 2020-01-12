@@ -1,0 +1,6 @@
+Figs-Generated/*
+Results-Generated/*
+.DS_Store
+*.pptx
+*.log
+.Rproj.user

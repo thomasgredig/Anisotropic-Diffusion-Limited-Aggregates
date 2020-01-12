@@ -1,0 +1,234 @@
+---
+title: "Anisotropic Diffusion Limited Aggregates"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+![Diffusion aggregate fractals](http://web.csulb.edu/~tgredig/research/fractal/fractal-generated.png) 
+
+# Introduction
+
+Inspired by the M.S. thesis defense talk of Felix Arroyo with Galen Pickett, here we explore fractals of aggregates. The aggregates are simulated (generated) and then evaluated. Diffusion or random walk is used to move the particles, once moved, they will be stationary. The motion or diffusion is varied.
+
+
+## Dimension of Fractals
+
+The dimension of a fractal can be computed in different ways. One way is called the "boxing method". It covers an image of size $N_1$ with boxes of size $N_1/\epsilon$, where $\epsilon$ is the scaling factor. Then it counts the number of boxes $N_\epsilon$ it needs to cover the original image. The following illustrations shows an application of this method on the map of UK.
+
+![Boxing method applied to UK map from Wikipedia](https://upload.wikimedia.org/wikipedia/commons/2/28/Great_Britain_Box.svg)
+
+According to [Wikipedia:Minkowski-Bouligand](https://en.wikipedia.org/wiki/Minkowski%E2%80%93Bouligand_dimension) the dimension $D_0$ can be computed as such:
+
+$$ D_0 = lim_{\epsilon \rightarrow 0} \frac{\log(N_\epsilon)}{\log(1/\epsilon)} $$
+Note that the dimenions is obtained in the limit, where $\epsilon \rightarrow 0$, which means that the box size then is small. For a quick check of 2D, take a solid area $A = \epsilon^2$, then $N_\epsilon = \epsilon^2$, so $D_0 = 2\log(\epsilon)/(-log(\epsilon)) = -2$. (Hmm, minus sign issue!). Easily, can be shown for a line, or cube, see [Appendix](#Appendix). 
+
+## Generating Fractals
+
+Create a box of dimension $N_1$, then put a particle in the middle, now add particles from the top or from the left. We are using periodic boundary conditions, so left and right is the same, and top and bottom is the same.
+
+```{r}
+# loading default functions
+library(sp)
+source('func.fractals.R') 
+N1 = 150
+l1 = generate.fractal(N1)
+```
+
+## Random Walk
+
+As particles are added, the random walk length, or number of steps, $L$ until it hits the aggregate gets shorter as can see by this graph; it does not fit to an exponential that well (hmm, can be investigated).
+
+```{r}
+d = data.frame(n.particle = 1:length(l1[[4]]), L =l1[[4]])
+d = d[d$L>0,]  # remove 0s
+ggplot(d, aes(n.particle, L)) + geom_point(col='red') +
+  scale_y_log10() + theme_bw() + geom_smooth()
+```
+
+For a [random walk](https://en.wikipedia.org/wiki/Random_walk), we estimate that the walking distance is proportional to $\propto \sqrt{L}$, where $L$ is the number of steps. The blue line indicates the size of the box. 
+```{r}
+plot(sqrt(d$L), col='red', pch=20)
+abline(h=N1, col='blue',lwd=2)
+```
+
+## Fractals Images
+
+It took `r signif(l1[[3]],3)` seconds to generate this fractal with length `r N1`x`r N1`. The height in the graph corresponds to the number of particle added; i.e. it is time, the higher the later in time. A contrast was added, so the first particle is not 1, but rather the contrast number.
+
+```{r}
+library(raster)
+q = read.csv(file.path(path.results,paste(l1[[2]],'.csv',sep='')))
+q = as.matrix(q)
+plot(raster(q))
+```
+
+Now, we will compute its dimensions using the boxing algorithm.
+
+```{r}
+l2 = get.fractal.dimension.boxing(q)
+# returns Ne vs. e and fit
+d = l2[['result']]
+ggplot(d, aes(e.inv.log, Ne.log)) + geom_point(col='red') +
+  theme_bw() + 
+  xlab(expression(paste('log (1/',epsilon,')'))) +
+  ylab(expression(paste('log (N'[epsilon],')'))) + 
+  scale_x_continuous(limits=c(-4,0)) + 
+  scale_y_continuous(limits=c(0,6))
+fit1 = l2[['fit']]
+summary(fit1)$coef
+print(paste("Dimension of fractal:",signif(summary(fit1)$coeff[2],3)))
+```
+
+
+So, the dimension is $D_0$ = `r signif(summary(fit1)$coeff[2],3)` $\pm$ `r signif(summary(fit1)$coeff[4],1)`.
+
+
+## Anisotropy
+
+Adding anisotropy to the drift now. In the random walk the new particle can move into 1 of 8 neighboring squares; the anisotropy is added by generating more random numbers in one particular direction (positive), the particle, then tends to move more into that direction. 
+
+```{r}
+# the higher the anistropy, the more it will move in one direction
+l1 = generate.fractal(N1, N.anisotropy=2, flip.FACTOR=1)
+q = l1[['q']]
+plot(raster(q))
+```
+
+Now, we will compute its dimensions using the boxing algorithm.
+
+```{r}
+l2 = get.fractal.dimension.boxing(q)
+fit2 = l2[['fit']]
+summary(fit2)$coef
+```
+
+
+So, the dimension is $D_0$ = `r signif(summary(fit2)$coeff[2],3)` $\pm$ `r signif(summary(fit2)$coeff[4],1)` for the one with the anisotropy.
+
+
+# Results
+
+Separetely, several fractals were generated, these are evaluated here and summarized.
+
+
+```{r}
+gd = read.csv(file.path(path.results, master.result.file), stringsAsFactors = FALSE)
+# load all files, compute dimensions, if not yet computed
+for(i in 1:nrow(gd)) {
+  if (!is.na(gd$dim[i])) {
+    if (gd$dim[i]==0) {
+      q = read.csv(file.path(path.results,paste(gd$fname[i],'.csv',sep='')))
+      l2 = get.fractal.dimension.boxing(q)
+      fit2 = l2[['fit']]
+      print(summary(fit2)$coef[2])
+      gd$dim[i] = summary(fit2)$coef[2]
+      gd$dim.sd[i] = summary(fit2)$coef[4]
+    }
+  }
+}
+gd$anisotropy = factor(gd$N.anisotropy)
+write.csv(gd, file = file.path(path.results, master.result.file), row.names = FALSE)
+gd1 = subset(gd, N>=100)
+```
+
+There are `r nrow(gd)` simulations that were run, we will use simulations that have more more than 100x100 in dimension, so there are **`r nrow(gd1)` simulations**. The dimensions are averaged. 
+
+The following plot shows how the anisotropy changes the dimensions.
+
+```{r}
+ggplot(gd1, aes(anisotropy, -dim)) + 
+  geom_boxplot(fill = 'orange') +
+  theme_bw()
+```
+
+```{r}
+gd1 = subset(gd, N>=120 & N.anisotropy != 16 & N.anisotropy != 3)
+ggplot(gd1, aes(anisotropy, -dim)) + 
+  geom_boxplot(fill = 'orange') +
+  theme_bw()
+```
+
+
+Study the correlations
+
+```{r}
+library(corrplot)
+M = cor(as.matrix(gd[,c(1,2,3,4,5,6,8,9)]))
+corrplot(M, method="square")
+```
+
+So, the error on the dimension $dim.sd$ is strongly anti-correlated with the $N$ size of the fractal. The generation time is corelated with the size of the fractal as well. The dimension is anti-correlated with the maximum number of iterations $max.iter$, and less so with the anisotropy $N.anisotropy$, which means that **we should keep the iteration number more constant**. 
+
+# Appendix
+
+Adding a few more things here. This report was generated in directory `r getwd()`.
+
+## Speed
+
+The larger the starting grid, the more time, here is a graph, of how much time is expected for each computation:
+
+```{r}
+gd = read.csv(file.path(path.results, master.result.file))
+gd$anisotropy = factor(gd$N.anisotropy)
+ggplot(gd, aes(N, generation.speed.sec, color=anisotropy)) + 
+  geom_point(size=4,  alpha=0.8) +
+  ylab('time (s)') + xlab('grid size N') +
+  theme_bw() +
+  scale_y_log10() + scale_x_log10()
+```
+
+
+## Solid Square
+
+Some tests that we can do, a solid square should be 2D: 
+
+```{r}
+q = matrix(1, ncol=100, nrow=100)
+l2 = get.fractal.dimension.boxing(q)
+# returns Ne vs. e and fit
+d = l2[['result']]
+ggplot(d, aes(e.inv.log, Ne.log)) + geom_point(col='red') +
+  theme_bw() + 
+  xlab(expression(paste('log (1/',epsilon,')'))) +
+  ylab(expression(paste('log (N'[epsilon],')')))
+```
+
+```{r}
+fit = l2[['fit']]
+summary(fit)$coef
+```
+
+
+So, we find for a solid square, the dimension is **`r signif(summary(fit)$coeff[2],3)` $\pm$ `r signif(summary(fit)$coeff[4],1)` dimensional**.
+
+
+
+
+
+## Solid Line
+
+Some tests that we can do, a solid line should be 1D: 
+
+```{r}
+q = matrix(0, ncol=100, nrow=100)
+q[50,1:100] = rep(1,100)
+l2 = get.fractal.dimension.boxing(q)
+# returns Ne vs. e and fit
+d = l2[['result']]
+ggplot(d, aes(e.inv.log, Ne.log)) + geom_point(col='red') +
+  theme_bw() + 
+  xlab(expression(paste('log (1/',epsilon,')'))) +
+  ylab(expression(paste('log (N'[epsilon],')')))
+```
+
+```{r}
+fit = l2[['fit']]
+summary(fit)$coef
+```
+
+So, we find for a solid square, the dimension is **`r signif(summary(fit)$coeff[2],3)` $\pm$ `r signif(summary(fit)$coeff[4],1)` dimensional**.

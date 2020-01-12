@@ -1,2 +1,6 @@
 # Anisotropic-Diffusion-Limited-Aggregates
- Anisotropic diffusion limited aggregates
+
+Quick simulation of anisotropic diffusion limited aggregates. Here is an example:
+
+![Comparison of isotropic and anisotropic diffusion limited aggregate](fractal-generated.png)
+
