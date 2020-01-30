@@ -4,3 +4,4 @@ Results-Generated/*
 *.pptx
 *.log
 .Rproj.user
+.Rhistory
